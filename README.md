@@ -106,10 +106,11 @@ Cluster interaction and day-to-day operations.
 | **envoy** | High-performance L7 proxy | The data plane behind most service meshes and API gateways |
 | **cloudflared** (`pkg.cloudflare.com`) | Cloudflare Tunnel daemon | Exposes local services securely without inbound firewall rules |
 
-### Build & packaging
+### Containers & build
 
 | Tool | What it does | Why it's here |
 | --- | --- | --- |
+| **docker** (Docker CE) | Container engine + CLI (with buildx and compose plugins) | The foundational runtime — builds, runs, and packages the images everything else scans, signs, and ships |
 | **pack** (`buildpacks/pack`) | Builds OCI images from source via Cloud Native Buildpacks | Produces container images without hand-written Dockerfiles |
 
 ### Infrastructure as Code (HashiCorp)
