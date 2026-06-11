@@ -6,6 +6,13 @@ the latest release, checks whether the installed version is already current, and
 installs to `/usr/local/bin` (overridable). Most are driven by a shared library so
 they behave consistently and take the same command-line flags.
 
+> **Target environment: WSL 2 (Ubuntu/Debian).** These scripts are written for a
+> WSL Ubuntu development setup on `x86_64`. They assume a Linux userland — kubectl
+> and minikube hard-require it — and the apt-based installers (Azure CLI, Chrome,
+> cloudflared, the deadsnakes Python builds) assume a Debian/Ubuntu host with
+> `apt`. They work on native Ubuntu/Debian too; they are **not** intended for macOS
+> or other distros without adjustment.
+
 ## Quick start
 
 ```bash
