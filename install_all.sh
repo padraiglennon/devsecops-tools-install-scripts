@@ -17,6 +17,7 @@
 set -u
 
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$(basename "${BASH_SOURCE[0]}")"   # this orchestrator, so we never run ourselves
 
 # Scripts that hard-require root (they check EUID and drop privileges via
 # $SUDO_USER). These get invoked as `sudo ./script`; all others run bare.
@@ -25,13 +26,10 @@ declare -A RUN_AS_ROOT=(
     [install_python3_version.sh]=1
 )
 
-# Non-installer helpers we never want in a blanket update run.
-EXCLUDE=(
-    update_all.sh
-    setup_gcp_creds.sh
-    setup_kubectl_autocomplete.sh
-    update_minikube.sh
-)
+# Non-installer helpers we never want in a blanket update run. The orchestrator
+# itself ($SELF) is excluded unconditionally in is_excluded, so a future rename
+# can't reintroduce the self-recursion.
+EXCLUDE=()
 
 # --- argument parsing ------------------------------------------------------
 ONLY=""
@@ -68,6 +66,7 @@ in_csv() { # in_csv <needle> <comma,list> — match against script name or tool 
 
 is_excluded() {
     local s="$1" e
+    [[ "$s" == "$SELF" ]] && return 0   # never run ourselves (infinite recursion)
     for e in "${EXCLUDE[@]}"; do [[ "$s" == "$e" ]] && return 0; done
     return 1
 }
