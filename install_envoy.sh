@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+# Abort cleanly on Ctrl-C (SIGINT) / SIGTERM: print a notice, then re-raise with
+# the signal's default disposition so the script exits 130/143 and any EXIT trap
+# (temp-dir cleanup) still runs.
+_on_signal() { echo >&2; echo "Interrupted - stopping." >&2; trap - "$1"; kill -"$1" "$$"; }
+trap '_on_signal INT' INT
+trap '_on_signal TERM' TERM
+
 #------------------#
 # Logging Functions
 #------------------#

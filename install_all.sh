@@ -99,10 +99,24 @@ fi
 
 # --- prime sudo + keep-alive ----------------------------------------------
 KEEPALIVE_PID=""
+INTERRUPTED=0
 cleanup() {
     [[ -n "$KEEPALIVE_PID" ]] && kill "$KEEPALIVE_PID" 2>/dev/null
 }
-trap cleanup EXIT INT TERM
+# Ctrl-C reaches the whole process group, so the running child dies too. Flag
+# the interrupt and re-raise with the default disposition so we exit 130 and
+# stop the run loop, instead of recording it as a per-script failure and
+# marching on to the next tool.
+on_interrupt() {
+    INTERRUPTED=1
+    echo >&2
+    echo "Interrupted - stopping." >&2
+    cleanup
+    trap - INT
+    kill -INT "$$"
+}
+trap cleanup EXIT
+trap on_interrupt INT TERM
 
 if [[ $DRY_RUN -eq 0 ]]; then
     echo "Priming sudo (one prompt for the whole run)..."
@@ -141,6 +155,14 @@ for s in "${SCRIPTS[@]}"; do
     fi
 
     rc=$?
+    # A child killed by SIGINT/SIGTERM exits 130/143. Treat that as "the user
+    # wants out", not a tool failure: stop the whole run immediately.
+    if [[ $INTERRUPTED -eq 1 || $rc -eq 130 || $rc -eq 143 ]]; then
+        echo >&2
+        echo "Interrupted during $s - stopping." >&2
+        cleanup
+        exit 130
+    fi
     if [[ $rc -eq 0 ]]; then
         OK+=("$s")
     else

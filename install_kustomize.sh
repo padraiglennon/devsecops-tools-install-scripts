@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Abort cleanly on Ctrl-C (SIGINT) / SIGTERM: print a notice, then re-raise with
+# the signal's default disposition so the script exits 130/143.
+_on_signal() { echo >&2; echo "Interrupted - stopping." >&2; trap - "$1"; kill -"$1" "$$"; }
+trap '_on_signal INT' INT
+trap '_on_signal TERM' TERM
+
 # 1. Get the latest version from GitHub API
 LATEST_VERSION=$(curl -s "https://api.github.com/repos/kubernetes-sigs/kustomize/releases/latest" | grep -oP '"tag_name":\s*"(kustomize/)?\K[^"]+' | head -n 1)
 

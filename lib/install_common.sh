@@ -21,6 +21,25 @@
 ic_strict() {
     set -euo pipefail
     IFS=$'\n\t'
+    ic_trap_interrupt
+}
+
+# ic_trap_interrupt - make Ctrl-C (SIGINT) / SIGTERM abort the script cleanly:
+# print a notice, then re-raise with the signal's default disposition so the
+# script exits 130 (INT) / 143 (TERM) and any EXIT trap (e.g. ic_mktemp's
+# temp-dir cleanup) still runs. Called by ic_strict so every lib-backed script
+# gets it automatically. Safe to call directly from scripts that skip ic_strict.
+ic_trap_interrupt() {
+    trap '_ic_on_signal INT'  INT
+    trap '_ic_on_signal TERM' TERM
+}
+
+_ic_on_signal() {
+    local sig="$1"
+    echo >&2
+    echo "Interrupted - stopping." >&2
+    trap - "$sig"
+    kill -"$sig" "$$"
 }
 
 # ic_require cmd...  — die unless every named command is on PATH.
