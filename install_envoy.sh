@@ -16,6 +16,20 @@ log_info() { echo -e "[INFO] $*"; }
 log_warn() { echo -e "[WARN] $*" >&2; }
 log_error() { echo -e "[ERROR] $*" >&2; }
 
+# retry_curl ARGS...  - curl with retry on transient failures (network errors,
+# connection timeouts, 5xx). Passes all args through; returns the last exit code.
+retry_curl() {
+    local attempt=1 delay=3 rc
+    while :; do
+        curl "$@" && return 0
+        rc=$?
+        (( rc == 22 )) && return "$rc"   # HTTP 4xx (rate limit/auth/not-found): do not retry
+        (( attempt >= 3 )) && return "$rc"
+        log_warn "curl failed (exit ${rc}), retry ${attempt}/2 in ${delay}s..."
+        sleep "$delay"; attempt=$((attempt + 1)); delay=$((delay * 2))
+    done
+}
+
 #------------------#
 # Default Variables
 #------------------#
@@ -89,11 +103,17 @@ detect_platform() {
 fetch_latest_version() {
     log_info "Fetching latest envoy version..."
 
-    ENVOY_VERSION=$(curl -fsSL https://api.github.com/repos/statecraft-protocol/envoy/releases/latest \
-        | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') || {
-            log_error "Failed to fetch the latest version from GitHub."
-            exit 1
-        }
+    # Resolve via the github.com releases/latest redirect (no API token, not
+    # rate-limited). Location is .../releases/tag/vX.Y.Z; strip to a bare semver.
+    local location
+    location=$(retry_curl -sI -o /dev/null -w '%{redirect_url}' \
+        "https://github.com/statecraft-protocol/envoy/releases/latest") || true
+    ENVOY_VERSION="${location##*/releases/tag/v}"
+
+    if [[ -z "$ENVOY_VERSION" || "$ENVOY_VERSION" == "$location" ]]; then
+        log_error "Failed to resolve the latest envoy version (network error or no published release)."
+        exit 1
+    fi
 
     log_info "Latest version detected: v${ENVOY_VERSION}"
 }
@@ -109,7 +129,7 @@ download_envoy() {
     DOWNLOAD_URL="https://github.com/statecraft-protocol/envoy/releases/download/v${ENVOY_VERSION}/${FILENAME}"
 
     log_info "Downloading envoy binary: $DOWNLOAD_URL"
-    curl -fsSLO "${DOWNLOAD_URL}" || {
+    retry_curl -fsSLO "${DOWNLOAD_URL}" || {
         log_error "Failed to download envoy binary."
         exit 1
     }
@@ -118,9 +138,9 @@ download_envoy() {
         CHECKSUM_URL="https://github.com/statecraft-protocol/envoy/releases/download/v${ENVOY_VERSION}/SHA256SUMS"
 
         log_info "Checking if checksum file exists..."
-        if curl --silent --head --fail "${CHECKSUM_URL}" > /dev/null; then
+        if retry_curl --silent --head --fail "${CHECKSUM_URL}" > /dev/null; then
             log_info "Downloading checksum file..."
-            curl -fsSLO "${CHECKSUM_URL}" || {
+            retry_curl -fsSLO "${CHECKSUM_URL}" || {
                 log_warn "Checksum file could not be downloaded. Continuing without verification."
                 return
             }

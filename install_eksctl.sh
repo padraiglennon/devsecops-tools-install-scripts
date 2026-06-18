@@ -16,6 +16,20 @@ log_info() { echo -e "[INFO] $*"; }
 log_warn() { echo -e "[WARN] $*" >&2; }
 log_error() { echo -e "[ERROR] $*" >&2; }
 
+# retry_curl ARGS...  - curl with retry on transient failures (network errors,
+# connection timeouts, 5xx). Passes all args through; returns the last exit code.
+retry_curl() {
+    local attempt=1 delay=3 rc
+    while :; do
+        curl "$@" && return 0
+        rc=$?
+        (( rc == 22 )) && return "$rc"   # HTTP 4xx (rate limit/auth/not-found): do not retry
+        (( attempt >= 3 )) && return "$rc"
+        log_warn "curl failed (exit ${rc}), retry ${attempt}/2 in ${delay}s..."
+        sleep "$delay"; attempt=$((attempt + 1)); delay=$((delay * 2))
+    done
+}
+
 #------------------#
 # Default Variables
 #------------------#
@@ -76,13 +90,18 @@ detect_platform() {
 fetch_latest_version() {
     log_info "Fetching latest eksctl version..."
 
-    # Fetches the tag name and removes the leading 'v' for internal variable use if needed,
-    # though eksctl downloads often use the 'v' prefix.
-    EKSCTL_VERSION=$(curl -fsSL https://api.github.com/repos/eksctl-io/eksctl/releases/latest \
-        | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/') || {
-            log_error "Failed to fetch the latest version from GitHub."
-            exit 1
-        }
+    # Resolve via the github.com releases/latest redirect (no API token, not
+    # rate-limited). Location is .../releases/tag/vX.Y.Z; keep the full tag,
+    # since eksctl download URLs use the 'v' prefix.
+    local location
+    location=$(retry_curl -sI -o /dev/null -w '%{redirect_url}' \
+        "https://github.com/eksctl-io/eksctl/releases/latest") || true
+    EKSCTL_VERSION="${location##*/releases/tag/}"
+
+    if [[ -z "$EKSCTL_VERSION" || "$EKSCTL_VERSION" == "$location" ]]; then
+        log_error "Failed to resolve the latest eksctl version (network error or no published release)."
+        exit 1
+    fi
 
     log_info "Latest version detected: ${EKSCTL_VERSION}"
 }
@@ -99,7 +118,7 @@ download_eksctl() {
     DOWNLOAD_URL="https://github.com/eksctl-io/eksctl/releases/download/${EKSCTL_VERSION}/${FILENAME}"
 
     log_info "Downloading eksctl archive: $DOWNLOAD_URL"
-    curl -fsSLO "${DOWNLOAD_URL}" || {
+    retry_curl -fsSLO "${DOWNLOAD_URL}" || {
         log_error "Failed to download eksctl archive."
         exit 1
     }
@@ -108,9 +127,9 @@ download_eksctl() {
         CHECKSUM_URL="https://github.com/eksctl-io/eksctl/releases/download/${EKSCTL_VERSION}/eksctl_checksums.txt"
 
         log_info "Checking if checksum file exists..."
-        if curl --silent --head --fail "${CHECKSUM_URL}" > /dev/null; then
+        if retry_curl --silent --head --fail "${CHECKSUM_URL}" > /dev/null; then
             log_info "Downloading checksum file..."
-            curl -fsSLO "${CHECKSUM_URL}" || {
+            retry_curl -fsSLO "${CHECKSUM_URL}" || {
                 log_warn "Checksum file could not be downloaded. Continuing without verification."
                 return
             }

@@ -16,6 +16,20 @@ log_info() { echo -e "[INFO] $*"; }
 log_warn() { echo -e "[WARN] $*" >&2; }
 log_error() { echo -e "[ERROR] $*" >&2; }
 
+# retry_curl ARGS...  - curl with retry on transient failures (network errors,
+# connection timeouts, 5xx). Passes all args through; returns the last exit code.
+retry_curl() {
+    local attempt=1 delay=3 rc
+    while :; do
+        curl "$@" && return 0
+        rc=$?
+        (( rc == 22 )) && return "$rc"   # HTTP 4xx (rate limit/auth/not-found): do not retry
+        (( attempt >= 3 )) && return "$rc"
+        log_warn "curl failed (exit ${rc}), retry ${attempt}/2 in ${delay}s..."
+        sleep "$delay"; attempt=$((attempt + 1)); delay=$((delay * 2))
+    done
+}
+
 #------------------#
 # Default Variables
 #------------------#
@@ -90,11 +104,17 @@ detect_platform() {
 fetch_latest_version() {
     log_info "Fetching latest k9s version..."
 
-    K9S_VERSION=$(curl -fsSL https://api.github.com/repos/derailed/k9s/releases/latest \
-        | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') || {
-            log_error "Failed to fetch the latest version from GitHub."
-            exit 1
-        }
+    # Resolve via the github.com releases/latest redirect (no API token, not
+    # rate-limited). Location is .../releases/tag/vX.Y.Z; strip to a bare semver.
+    local location
+    location=$(retry_curl -sI -o /dev/null -w '%{redirect_url}' \
+        "https://github.com/derailed/k9s/releases/latest") || true
+    K9S_VERSION="${location##*/releases/tag/v}"
+
+    if [[ -z "$K9S_VERSION" || "$K9S_VERSION" == "$location" ]]; then
+        log_error "Failed to resolve the latest k9s version (network error or no published release)."
+        exit 1
+    fi
 
     log_info "Latest version detected: v${K9S_VERSION}"
 }
@@ -110,7 +130,7 @@ download_k9s() {
     DOWNLOAD_URL="https://github.com/derailed/k9s/releases/download/v${K9S_VERSION}/${FILENAME}"
 
     log_info "Downloading k9s archive: $DOWNLOAD_URL"
-    curl -fsSLO "${DOWNLOAD_URL}" || {
+    retry_curl -fsSLO "${DOWNLOAD_URL}" || {
         log_error "Failed to download k9s archive."
         exit 1
     }
@@ -119,9 +139,9 @@ download_k9s() {
         CHECKSUM_URL="https://github.com/derailed/k9s/releases/download/v${K9S_VERSION}/checksums.txt"
 
         log_info "Checking if checksum file exists..."
-        if curl --silent --head --fail "${CHECKSUM_URL}" > /dev/null; then
+        if retry_curl --silent --head --fail "${CHECKSUM_URL}" > /dev/null; then
             log_info "Downloading checksum file..."
-            curl -fsSLO "${CHECKSUM_URL}" || {
+            retry_curl -fsSLO "${CHECKSUM_URL}" || {
                 log_warn "Checksum file could not be downloaded. Continuing without verification."
                 return
             }

@@ -8,11 +8,31 @@ _on_signal() { echo >&2; echo "Interrupted - stopping." >&2; trap - "$1"; kill -
 trap '_on_signal INT' INT
 trap '_on_signal TERM' TERM
 
-# Determine the latest version
-VERSION=$(curl -s https://api.github.com/repos/argoproj/argo-workflows/releases/latest | grep tag_name | cut -d '"' -f 4)
+# retry_curl ARGS...  - curl with retry on transient failures (network errors,
+# connection timeouts, 5xx). Passes all args through; returns the last exit code.
+retry_curl() {
+    local attempt=1 delay=3 rc
+    while :; do
+        curl "$@" && return 0
+        rc=$?
+        (( rc == 22 )) && return "$rc"   # HTTP 4xx (rate limit/auth/not-found): do not retry
+        (( attempt >= 3 )) && return "$rc"
+        echo "[WARN] curl failed (exit ${rc}), retry ${attempt}/2 in ${delay}s..." >&2
+        sleep "$delay"; attempt=$((attempt + 1)); delay=$((delay * 2))
+    done
+}
+
+# Determine the latest version via the github.com releases/latest redirect
+# (no API token, not rate-limited). Location is .../releases/tag/vX.Y.Z.
+LOCATION=$(retry_curl -sI -o /dev/null -w '%{redirect_url}' "https://github.com/argoproj/argo-workflows/releases/latest")
+VERSION="${LOCATION##*/releases/tag/}"
+if [ -z "$VERSION" ] || [ "$VERSION" = "$LOCATION" ]; then
+    echo "[ERROR] Could not resolve the latest argo version (network error or no published release)." >&2
+    exit 1
+fi
 
 # Download the compressed binary
-curl -sLO "https://github.com/argoproj/argo-workflows/releases/download/${VERSION}/argo-linux-amd64.gz"
+retry_curl -sLO "https://github.com/argoproj/argo-workflows/releases/download/${VERSION}/argo-linux-amd64.gz"
 
 # Decompress the binary
 gunzip "argo-linux-amd64.gz"

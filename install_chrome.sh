@@ -16,6 +16,20 @@ log_info() { echo -e "[INFO] $*"; }
 log_warn() { echo -e "[WARN] $*" >&2; }
 log_error() { echo -e "[ERROR] $*" >&2; }
 
+# retry_curl ARGS...  - curl with retry on transient failures (network errors,
+# connection timeouts, 5xx). Passes all args through; returns the last exit code.
+retry_curl() {
+    local attempt=1 delay=3 rc
+    while :; do
+        curl "$@" && return 0
+        rc=$?
+        (( rc == 22 )) && return "$rc"   # HTTP 4xx (rate limit/auth/not-found): do not retry
+        (( attempt >= 3 )) && return "$rc"
+        log_warn "curl failed (exit ${rc}), retry ${attempt}/2 in ${delay}s..."
+        sleep "$delay"; attempt=$((attempt + 1)); delay=$((delay * 2))
+    done
+}
+
 #------------------#
 # Default Variables
 #------------------#
@@ -75,7 +89,7 @@ configure_repo() {
     log_info "Configuring Google Chrome apt repository..."
 
     # Import / refresh the signing key into a dedicated keyring (modern best practice).
-    curl -fsSL "${GOOGLE_KEY_URL}" \
+    retry_curl -fsSL "${GOOGLE_KEY_URL}" \
         | sudo gpg --dearmor --yes -o "${KEYRING_PATH}"
     sudo chmod 0644 "${KEYRING_PATH}"
 

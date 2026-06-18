@@ -16,6 +16,20 @@ log_info() { echo -e "[INFO] $*"; }
 log_warn() { echo -e "[WARN] $*" >&2; }
 log_error() { echo -e "[ERROR] $*" >&2; }
 
+# retry_curl ARGS...  - curl with retry on transient failures (network errors,
+# connection timeouts, 5xx). Passes all args through; returns the last exit code.
+retry_curl() {
+    local attempt=1 delay=3 rc
+    while :; do
+        curl "$@" && return 0
+        rc=$?
+        (( rc == 22 )) && return "$rc"   # HTTP 4xx (rate limit/auth/not-found): do not retry
+        (( attempt >= 3 )) && return "$rc"
+        log_warn "curl failed (exit ${rc}), retry ${attempt}/2 in ${delay}s..."
+        sleep "$delay"; attempt=$((attempt + 1)); delay=$((delay * 2))
+    done
+}
+
 #------------------#
 # Config Variables
 #------------------#
@@ -90,11 +104,17 @@ detect_platform() {
 fetch_latest_version() {
     log_info "Fetching latest helm version..."
 
-    HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest \
-        | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/') || {
-            log_error "Failed to fetch the latest Helm version from GitHub."
-            exit 1
-        }
+    # Resolve via the github.com releases/latest redirect (no API token, not
+    # rate-limited). Location is .../releases/tag/vX.Y.Z; strip to a bare semver.
+    local location
+    location=$(retry_curl -sI -o /dev/null -w '%{redirect_url}' \
+        "https://github.com/helm/helm/releases/latest") || true
+    HELM_VERSION="${location##*/releases/tag/v}"
+
+    if [[ -z "$HELM_VERSION" || "$HELM_VERSION" == "$location" ]]; then
+        log_error "Failed to resolve the latest Helm version (network error or no published release)."
+        exit 1
+    fi
 
     log_info "Latest version detected: v${HELM_VERSION}"
 }
@@ -111,7 +131,7 @@ download_helm() {
     CHECKSUM_URL="https://get.helm.sh/${FILENAME}.sha256sum"
 
     log_info "Downloading Helm archive: $DOWNLOAD_URL"
-    curl -fsSLO "${DOWNLOAD_URL}" || {
+    retry_curl -fsSLO "${DOWNLOAD_URL}" || {
         log_error "Failed to download Helm archive."
         exit 1
     }
@@ -119,8 +139,8 @@ download_helm() {
     if command -v sha256sum &>/dev/null; then
         log_info "Checking if checksum file is available..."
 
-        if curl --silent --head --fail "${CHECKSUM_URL}" > /dev/null; then
-            curl -fsSLO "${CHECKSUM_URL}" || {
+        if retry_curl --silent --head --fail "${CHECKSUM_URL}" > /dev/null; then
+            retry_curl -fsSLO "${CHECKSUM_URL}" || {
                 log_warn "Checksum file could not be downloaded. Continuing without verification."
                 return
             }

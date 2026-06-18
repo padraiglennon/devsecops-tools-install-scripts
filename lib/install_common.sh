@@ -138,29 +138,57 @@ ic_map_arch() {
 # ---------------------------------------------------------------------------
 # Release resolution + version compare
 # ---------------------------------------------------------------------------
-GH_API_BASE="${GH_API_BASE:-https://api.github.com}"
-GH_TOKEN="${GH_TOKEN:-}"
 IC_CONNECT_TIMEOUT="${IC_CONNECT_TIMEOUT:-30}"
 IC_READ_TIMEOUT="${IC_READ_TIMEOUT:-300}"
+IC_CURL_RETRIES="${IC_CURL_RETRIES:-3}"        # total attempts per request
+IC_CURL_RETRY_DELAY="${IC_CURL_RETRY_DELAY:-3}"  # seconds, doubled each retry
 
-# ic_gh_latest_tag REPO [tag_regex]  — echo the latest release tag. Anchored,
-# minified-JSON-safe extraction. Honors GH_TOKEN. Validates against tag_regex
-# if given.
+# ic_curl ARGS...  - curl with retry on transient failures only. Retries network
+# errors, connection timeouts and 5xx up to IC_CURL_RETRIES times with
+# exponential backoff, but does NOT retry HTTP 4xx (curl exit 22 with -f):
+# a 403 (rate limit), 401 (auth) or 404 (not found) will not succeed on retry,
+# and retrying a 403 just burns the GitHub API quota faster. Passes all args
+# through. Returns curl's exit status from the last attempt.
+ic_curl() {
+    local attempt=1 delay="$IC_CURL_RETRY_DELAY" rc
+    while :; do
+        curl "$@" && return 0
+        rc=$?
+        # Exit 22 = HTTP >=400 under -f. Not transient; don't retry.
+        if (( rc == 22 )); then
+            return "$rc"
+        fi
+        if (( attempt >= IC_CURL_RETRIES )); then
+            return "$rc"
+        fi
+        ic_warn "curl failed (exit ${rc}), retry ${attempt}/$((IC_CURL_RETRIES - 1)) in ${delay}s..."
+        sleep "$delay"
+        attempt=$((attempt + 1))
+        delay=$((delay * 2))
+    done
+}
+
+# ic_gh_latest_tag REPO [tag_regex]  - echo the latest release tag.
+#
+# Resolves via the github.com/<repo>/releases/latest redirect, NOT the
+# api.github.com REST API: the redirect's Location is .../releases/tag/<tag>,
+# so the tag is read straight from the URL. This needs no token and is not
+# subject to the API's 60-requests/hour-per-IP unauthenticated rate limit, so
+# the scripts stay standalone and runnable by anyone. Validates against
+# tag_regex if given.
 ic_gh_latest_tag() {
     local repo="$1" regex="${2:-}"
-    local headers=("-H" "Accept: application/vnd.github+json")
-    [[ -n "$GH_TOKEN" ]] && headers+=("-H" "Authorization: Bearer ${GH_TOKEN}")
-    local url="${GH_API_BASE%/}/repos/${repo}/releases/latest"
-    local body tag
-    # Capture first, then parse — avoids `grep -m1` closing the pipe early
-    # (curl exit 23 under pipefail).
-    body=$(curl -fsSL --connect-timeout "$IC_CONNECT_TIMEOUT" --max-time "$IC_READ_TIMEOUT" \
-            "${headers[@]}" "$url") || true
-    tag=$(printf '%s' "$body" \
-          | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' \
-          | head -n1 \
-          | sed -E 's/.*"([^"]+)"$/\1/')
-    [[ -n "$tag" ]] || ic_die "Failed to resolve latest release for ${repo} (rate-limited or network error?)."
+    local url="https://github.com/${repo}/releases/latest"
+    local location tag
+    # -I HEAD + -w redirect_url gives the final Location without downloading the
+    # release page. Tag is the path component after /tag/ (may be namespaced,
+    # e.g. kustomize/v5.8.1 - callers strip any prefix with ic_strip_v).
+    location=$(ic_curl -sI -o /dev/null --connect-timeout "$IC_CONNECT_TIMEOUT" \
+            --max-time "$IC_READ_TIMEOUT" -w '%{redirect_url}' "$url") || true
+    if [[ "$location" == *"/releases/tag/"* ]]; then
+        tag="${location##*/releases/tag/}"
+    fi
+    [[ -n "$tag" ]] || ic_die "Failed to resolve latest release for ${repo} (network error or no published release?)."
     if [[ -n "$regex" && ! "$tag" =~ $regex ]]; then
         ic_die "Resolved tag '${tag}' for ${repo} does not match expected pattern /${regex}/."
     fi
@@ -199,13 +227,13 @@ ic_download() {
         : > "$dest"
         return 0
     fi
-    curl -fL --connect-timeout "$IC_CONNECT_TIMEOUT" --max-time "$IC_READ_TIMEOUT" \
+    ic_curl -fL --connect-timeout "$IC_CONNECT_TIMEOUT" --max-time "$IC_READ_TIMEOUT" \
         -o "$dest" "$url" || ic_die "Download failed: $url"
 }
 
 # ic_http_exists URL  — HEAD check; return status.
 ic_http_exists() {
-    curl -sIf --connect-timeout "$IC_CONNECT_TIMEOUT" "$1" >/dev/null 2>&1
+    ic_curl -sIf --connect-timeout "$IC_CONNECT_TIMEOUT" "$1" >/dev/null 2>&1
 }
 
 # ---------------------------------------------------------------------------
