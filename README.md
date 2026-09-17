@@ -82,6 +82,7 @@ The glue tools used in nearly every script and pipeline.
 | --- | --- | --- |
 | **[jq](https://jqlang.github.io/jq/manual/)** (`jqlang/jq`) | Query and transform JSON | Robust replacement for `grep`/`sed` when parsing API responses |
 | **[yq](https://mikefarah.gitbook.io/yq/)** (`mikefarah/yq`) | Query and transform YAML | Indispensable with all the Kubernetes / Helm / Argo YAML |
+| **[gh](https://cli.github.com/)** (`cli/cli`) | Official GitHub CLI | Automates repository, workflow, issue, and PR management on the command line |
 
 ### Kubernetes
 
