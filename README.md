@@ -143,6 +143,7 @@ Cluster interaction and day-to-day operations.
 | Tool | What it does | Why it's here |
 | --- | --- | --- |
 | **[google-chrome](https://support.google.com/chrome/answer/95346)** (`dl.google.com`) | Chrome browser | Headless browser for testing, scraping, and rendering |
+| **[discobox](https://github.com/discobox-ai/discobox#readme)** (`discobox-ai/discobox`) | Client for Discobox sandboxes that run coding-agent harnesses (Claude Code, Codex, OpenCode) | Runs coding agents in isolated VMs. Installed as a raw binary with SHA-256 verification |
 
 ---
 
