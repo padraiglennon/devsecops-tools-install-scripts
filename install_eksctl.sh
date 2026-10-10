@@ -135,8 +135,8 @@ download_eksctl() {
             }
 
             log_info "Verifying checksum..."
-            # eksctl checksums.txt contains the full path/filename
-            if grep "${FILENAME}" eksctl_checksums.txt | sha256sum -c -; then
+            # Match the filename exactly: the file also lists "<name>.sbom.json" entries
+            if awk -v f="${FILENAME}" '$2 == f' eksctl_checksums.txt | sha256sum -c -; then
                 log_info "Checksum verification passed."
             else
                 log_error "Checksum verification failed!"
