@@ -57,7 +57,11 @@ current_minikube_version() {
 }
 is_minikube_running() {
     command -v minikube >/dev/null 2>&1 || return 1
-    run_to "$MINIKUBE_TIMEOUT_SECS" minikube status 2>/dev/null | grep -qi 'Running'
+    # `minikube status` exits non-zero unless every component is healthy, so
+    # capture its output instead of letting pipefail decide the result.
+    local out
+    out="$(run_to "$MINIKUBE_TIMEOUT_SECS" minikube status 2>/dev/null || true)"
+    grep -qi 'Running' <<<"$out"
 }
 
 main() {
