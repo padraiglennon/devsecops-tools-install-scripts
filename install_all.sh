@@ -16,6 +16,10 @@
 
 set -u
 
+# Tells child scripts they run in a batch, so they must not start foreground
+# services (for example the cloudflared tunnel) that would block the run.
+export INSTALL_ALL_RUN=1
+
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="$(basename "${BASH_SOURCE[0]}")"   # this orchestrator, so we never run ourselves
 

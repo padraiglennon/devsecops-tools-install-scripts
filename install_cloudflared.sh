@@ -34,6 +34,13 @@ if ! command -v cloudflared >/dev/null 2>&1; then
     sudo apt-get update && sudo apt-get install -y cloudflared
 fi
 
+# The tunnel runs in the foreground and blocks. install_all.sh sets
+# INSTALL_ALL_RUN=1 so a batch run installs the package and moves on.
+if [[ "${INSTALL_ALL_RUN:-}" == 1 ]]; then
+    ic_info "Skipping tunnel start (batch run). Run ./install_cloudflared.sh to start it."
+    exit 0
+fi
+
 # Run the tunnel.
 [[ -r "$HOME/.envfiles/cloudflared.env" ]] || ic_die "Missing ~/.envfiles/cloudflared.env (needs CLOUDFLARE_TOKEN)."
 # shellcheck source=/dev/null
