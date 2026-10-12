@@ -9,7 +9,7 @@ they behave consistently and take the same command-line flags.
 > **Target environment: WSL 2 (Ubuntu/Debian).** These scripts are written for a
 > WSL Ubuntu development setup on `x86_64`. They assume a Linux userland — kubectl
 > and minikube hard-require it — and the apt-based installers (Azure CLI, Chrome,
-> cloudflared, the deadsnakes Python builds) assume a Debian/Ubuntu host with
+> cloudflared, tailscale, the deadsnakes Python builds) assume a Debian/Ubuntu host with
 > `apt`. They work on native Ubuntu/Debian too; they are **not** intended for macOS
 > or other distros without adjustment.
 
@@ -106,6 +106,7 @@ Cluster interaction and day-to-day operations.
 | --- | --- | --- |
 | **[envoy](https://www.envoyproxy.io/docs)** | High-performance L7 proxy | The data plane behind most service meshes and API gateways |
 | **[cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)** (`pkg.cloudflare.com`) | Cloudflare Tunnel daemon | Exposes local services securely without inbound firewall rules |
+| **[tailscale](https://tailscale.com/kb/1031/install-linux)** (`pkgs.tailscale.com`) | WireGuard-based mesh VPN client | Private network access to machines and clusters without open ports |
 
 ### Containers & build
 
