@@ -11,10 +11,25 @@ ic_strict
 IC_TOOL_NAME=uv
 IC_TOOL_DESC="Fast Python package/project manager (astral-sh/uv)"
 IC_REPO=astral-sh/uv
+IC_HELP_EXTRA="
+uv-specific:
+  --project <dir>   After install, run 'uv lock --upgrade-package certifi' in <dir>.
+  UV_PROJECT        Env fallback for --project."
 DEFAULT_INSTALL_DIR="/usr/local/bin"
 
 : "${REQ_VERSION:=${UV_VERSION:-latest}}"
-ic_parse_args "$@"
+PROJECT_DIR="${UV_PROJECT:-}"
+
+# Pull off the uv-only --project flag, then hand the rest to the shared parser.
+_args=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project)   PROJECT_DIR="${2:-}"; [[ -n "$PROJECT_DIR" ]] || ic_die "--project requires a directory"; shift 2 ;;
+        --project=*) PROJECT_DIR="${1#*=}"; shift ;;
+        *)           _args+=("$1"); shift ;;
+    esac
+done
+ic_parse_args "${_args[@]}"
 
 ic_require curl tar sha256sum awk find
 
@@ -93,4 +108,15 @@ ic_install_bin "$UV_BIN" "${INSTALL_DIR}/uv"
 ic_rule
 "${INSTALL_DIR}/uv" --version
 ic_rule
+
+if [[ "$REQ_VERSION" == "latest" || -z "$REQ_VERSION" ]]; then
+    "${INSTALL_DIR}/uv" self update || ic_warn "uv self update failed (needs a standalone-installer receipt); the release install above is current."
+fi
+
+if [[ -n "$PROJECT_DIR" ]]; then
+    [[ -d "$PROJECT_DIR" ]] || ic_die "--project directory not found: $PROJECT_DIR"
+    ic_info "Upgrading certifi in the lock file of $PROJECT_DIR"
+    ( cd "$PROJECT_DIR" && "${INSTALL_DIR}/uv" lock --upgrade-package certifi )
+fi
+
 ic_info "uv installation complete."
