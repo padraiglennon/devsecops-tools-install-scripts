@@ -73,15 +73,32 @@ else
     sudo apt-get install -y "${PKGS[@]}"
 fi
 
-# --- Add invoking user to the docker group -----------------------------------
-TARGET_USER="${SUDO_USER:-$USER}"
-if [[ "$TARGET_USER" != "root" ]]; then
-    if ! id -nG "$TARGET_USER" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
-        ic_info "Adding ${TARGET_USER} to the 'docker' group..."
-        sudo usermod -aG docker "$TARGET_USER"
-        ic_warn "Group change takes effect on next login (or run: newgrp docker)."
+# --- Set up the docker group and add the invoking user -----------------------
+ensure_docker_group() {
+    if getent group docker >/dev/null; then
+        return
     fi
-fi
+    ic_info "Creating the 'docker' group..."
+    sudo groupadd docker
+}
+
+add_user_to_docker_group() {
+    local user="$1"
+    if [[ "$user" == "root" ]]; then
+        ic_warn "Running as root with no SUDO_USER. Run: sudo usermod -aG docker <user>"
+        return
+    fi
+    if id -nG "$user" | tr ' ' '\n' | grep -qx docker; then
+        ic_info "${user} is already in the 'docker' group."
+        return
+    fi
+    ic_info "Adding ${user} to the 'docker' group..."
+    sudo usermod -aG docker "$user"
+    ic_warn "Group change takes effect on next login (or run: newgrp docker)."
+}
+
+ensure_docker_group
+add_user_to_docker_group "${SUDO_USER:-$(id -un)}"
 
 # --- Verify ------------------------------------------------------------------
 ic_rule
