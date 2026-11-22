@@ -3,7 +3,7 @@
 A collection of idempotent shell scripts for installing and upgrading the tools a
 DevOps / DevSecOps engineer (or team) reaches for day to day. Each script resolves
 the latest release, checks whether the installed version is already current, and
-installs to `/usr/local/bin` (overridable). Most are driven by a shared library so
+installs to `/usr/local/bin` (overridable, except the apt-based scripts and `claude`, which choose their own location). Most are driven by a shared library so
 they behave consistently and take the same command-line flags.
 
 > **Target environment: WSL 2 (Ubuntu/Debian).** These scripts are written for a
@@ -136,7 +136,7 @@ Cluster interaction and day-to-day operations.
 | Tool | What it does | Why it's here |
 | --- | --- | --- |
 | **[go](https://go.dev/doc/)** (`go.dev`) | Go toolchain | Most cloud-native tooling is written in Go; needed to build from source |
-| **[uv](https://docs.astral.sh/uv/)** (`astral-sh/uv`) | Fast Python package / project manager | Modern, dramatically faster pip/venv replacement |
+| **[uv](https://docs.astral.sh/uv/)** (`astral-sh/uv`) | Fast Python package / project manager | Modern, dramatically faster pip/venv replacement. Also runs `uv self update`. `--project <dir>` (or `UV_PROJECT`) upgrades `certifi` in that project's lock file and refuses to run as root |
 | **[python3](https://docs.python.org/3/)** (deadsnakes) | Specific Python versions + venvs | Pin and manage Python versions for tooling and scripts |
 
 ### Desktop / misc
@@ -168,7 +168,8 @@ ic_parse_args "$@"; gh_binary_install
 ```
 
 Tools with bespoke needs (kubectl's checksum + backup, minikube's running-cluster
-detection, the cloud CLIs' official installers, Go/Python's privilege handling)
+detection, the cloud CLIs' official installers, Go/Python's privilege handling, Claude Code's
+checksum check followed by its own `claude install` step)
 source the library for plumbing but keep their own logic.
 
 `install_all.sh` runs every script in one pass: it primes `sudo` once and keeps the
