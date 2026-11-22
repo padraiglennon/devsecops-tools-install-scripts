@@ -115,6 +115,7 @@ fi
 
 if [[ -n "$PROJECT_DIR" ]]; then
     [[ -d "$PROJECT_DIR" ]] || ic_die "--project directory not found: $PROJECT_DIR"
+    [[ $EUID -ne 0 ]] || ic_die "--project runs project build code; run the script as a normal user, not root"
     ic_info "Upgrading certifi in the lock file of $PROJECT_DIR"
     ( cd "$PROJECT_DIR" && "${INSTALL_DIR}/uv" lock --upgrade-package certifi )
 fi
